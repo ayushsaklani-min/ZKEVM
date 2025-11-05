@@ -1,0 +1,8 @@
+node_modules/
+.env
+out/
+cache/
+foundry-cache/
+artifacts/
+coverage/
+.DS_Store

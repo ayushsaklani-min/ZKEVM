@@ -1,0 +1,41 @@
+name: CI
+
+on: [push]
+
+jobs:
+  build-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+      - name: Build
+        run: |
+          cd oraclex
+          forge --version
+          forge build
+  test-js:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Test JS
+        run: |
+          cd oraclex
+          npm ci || npm i
+          echo "No JS tests yet"
+  build-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Build
+        run: |
+          cd oraclex/frontend
+          npm ci || npm i
+          npm run build
