@@ -9,7 +9,9 @@
     "deploy:contracts": "node scripts/deploy_all.js",
     "demo": "node scripts/demo_flow.js",
     "compile": "npx hardhat compile",
-    "test:hh": "npx hardhat test"
+    "test:hh": "npx hardhat test",
+    "build": "cd frontend && npm install && npm run build",
+    "postinstall": "cd frontend && npm install"
   },
   "dependencies": {
     "axios": "^1.7.7",

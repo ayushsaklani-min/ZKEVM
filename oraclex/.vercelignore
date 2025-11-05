@@ -1,0 +1,14 @@
+node_modules
+backend
+scripts
+contracts
+artifacts
+test
+hardhat.config.js
+foundry.toml
+.env
+.env.local
+deployed.json
+*.md
+!README.md
+

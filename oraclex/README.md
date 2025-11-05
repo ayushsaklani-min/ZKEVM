@@ -2,6 +2,10 @@
 
 Autonomous AI Liquidity Layer MVP for prediction markets on Polygon zkEVM testnet.
 
+## 🚀 Quick Deploy
+
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed deployment instructions to Vercel (frontend) and Render (backend).
+
 ## What it does
 - Detects a trending event (simulated)
 - Deploys a market + isolated USDC vault

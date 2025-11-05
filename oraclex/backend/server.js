@@ -13,7 +13,8 @@ const app = express();
 app.use(express.json());
 app.use(cors({ origin: '*'}));
 
-const PORT = process.env.BACKEND_PORT || 4000;
+// Render sets PORT automatically, fallback to BACKEND_PORT or 4000
+const PORT = process.env.PORT || process.env.BACKEND_PORT || 4000;
 const WSP = process.env.WS_PORT || 4001;
 const root = process.cwd();
 
@@ -62,8 +63,23 @@ const markets = new Map(); // marketId => { eventId, description, closeTimestamp
 
 function broadcast(msg) {
   const data = JSON.stringify(msg);
-  wss.clients.forEach(c => { try { c.send(data); } catch (e) {} });
+  if (wss) {
+    wss.clients.forEach(c => { 
+      try { 
+        if (c.readyState === 1) { // WebSocket.OPEN
+          c.send(data); 
+        }
+      } catch (e) {
+        // Silently handle closed connections
+      }
+    });
+  }
 }
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
 
 app.get('/addresses', (req, res) => {
   try {
@@ -136,62 +152,245 @@ app.post('/deploy-market', async (req, res) => {
 
 app.post('/ai-run', async (req, res) => {
   try {
-    if (!deployed) deployed = JSON.parse(fs.readFileSync(deployedPath, 'utf8'));
+    if (!deployed) {
+      if (fs.existsSync(deployedPath)) {
+        deployed = JSON.parse(fs.readFileSync(deployedPath, 'utf8'));
+      } else {
+        return res.status(500).json({ error: 'Contracts not deployed. Run deploy_all.js first.' });
+      }
+    }
     const { marketId, eventId, description, closeTimestamp } = req.body;
+    if (!marketId || !eventId || !description) {
+      return res.status(400).json({ error: 'Missing required fields: marketId, eventId, description' });
+    }
+    
     const ts = Math.floor(Date.now() / 1000);
-    const py = spawn('python', [path.join(root, 'backend', 'ai_proxy.py')]);
-    const input = { eventId, description, timestamp: ts, chainId: await provider.getNetwork().then(n => Number(n.chainId)) };
+    const chainId = await provider.getNetwork().then(n => Number(n.chainId));
+    
+    // Try python3 first, fallback to python (Windows)
+    const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
+    const py = spawn(pythonCmd, [path.join(root, 'backend', 'ai_proxy.py')]);
+    
+    const input = { eventId, description, timestamp: ts, chainId };
     py.stdin.write(JSON.stringify(input));
     py.stdin.end();
+    
     let out = '';
+    let errOut = '';
     py.stdout.on('data', (d) => out += d.toString());
-    py.stderr.on('data', (d) => console.error(d.toString()));
-    py.on('close', async () => {
-      const { probability, explanation, aiHash } = JSON.parse(out);
-      const verifier = getContract('OracleXVerifier', deployed.OracleXVerifier);
-      const tx = await verifier.commitAI(marketId, aiHash, '');
-      await tx.wait();
-      const m = markets.get(marketId) || { eventId, description, closeTimestamp };
-      m.probability = probability;
-      markets.set(marketId, m);
-      broadcast({ type: 'ai_committed', marketId, probability, explanation, aiHash });
-      res.json({ probability, explanation, aiHash });
+    py.stderr.on('data', (d) => errOut += d.toString());
+    
+    py.on('close', async (code) => {
+      if (code !== 0) {
+        console.error('Python script error:', errOut);
+        return res.status(500).json({ error: `Python script failed: ${errOut || 'Unknown error'}` });
+      }
+      try {
+        const result = JSON.parse(out);
+        if (result.error) {
+          return res.status(500).json({ error: result.error });
+        }
+        const { probability, explanation, aiHash } = result;
+        
+        // Convert marketId to bytes32 if it's a string
+        let marketIdBytes32 = marketId;
+        if (typeof marketId === 'string' && marketId.startsWith('0x')) {
+          marketIdBytes32 = marketId;
+        } else if (typeof marketId === 'string') {
+          marketIdBytes32 = ethers.solidityPackedKeccak256(['string'], [marketId]);
+        }
+        
+        const verifier = getContract('OracleXVerifier', deployed.OracleXVerifier);
+        const tx = await verifier.commitAI(marketIdBytes32, aiHash, '');
+        await tx.wait();
+        
+        const m = markets.get(marketId) || markets.get(marketIdBytes32) || { eventId, description, closeTimestamp };
+        m.probability = probability;
+        markets.set(marketId, m);
+        markets.set(marketIdBytes32, m);
+        
+        broadcast({ type: 'ai_committed', marketId, probability, explanation, aiHash });
+        res.json({ probability, explanation, aiHash });
+      } catch (parseErr) {
+        console.error('Failed to parse AI output:', parseErr, 'Output:', out);
+        res.status(500).json({ error: `Failed to parse AI output: ${String(parseErr)}` });
+      }
+    });
+    
+    py.on('error', (err) => {
+      console.error('Failed to start Python:', err);
+      res.status(500).json({ error: `Python not found or script error: ${err.message}` });
     });
   } catch (e) {
+    console.error('AI Run endpoint error:', e);
     res.status(500).json({ error: String(e) });
   }
 });
 
 app.post('/allocate', async (req, res) => {
   try {
+    if (!deployed) {
+      if (fs.existsSync(deployedPath)) {
+        deployed = JSON.parse(fs.readFileSync(deployedPath, 'utf8'));
+      } else {
+        return res.status(500).json({ error: 'Contracts not deployed. Run deploy_all.js first.' });
+      }
+    }
     const { marketId } = req.body;
-    const m = markets.get(marketId);
-    if (!m || !m.vault) throw new Error('Market not deployed');
+    if (!marketId) {
+      return res.status(400).json({ error: 'marketId is required' });
+    }
+    
+    // Try both marketId formats
+    let m = markets.get(marketId);
+    if (!m) {
+      // Try as bytes32 if it's a hex string
+      const marketIdBytes32 = typeof marketId === 'string' && marketId.startsWith('0x') 
+        ? marketId 
+        : ethers.solidityPackedKeccak256(['string'], [marketId]);
+      m = markets.get(marketIdBytes32);
+    }
+    
+    if (!m || !m.vault) {
+      return res.status(404).json({ error: 'Market not found or vault not deployed' });
+    }
+    
     const contract = getContract('OracleXVault', m.vault);
-    const bal = await getContract('MockUSDC', deployed.MockUSDC).balanceOf(m.vault);
+    const usdc = getContract('MockUSDC', deployed.MockUSDC);
+    const bal = await usdc.balanceOf(m.vault);
+    
+    if (bal === 0n) {
+      return res.status(400).json({ error: 'Vault has no balance to allocate' });
+    }
+    
     const prob = (m && m.probability != null) ? m.probability : 50;
     const yesAmt = (bal * BigInt(prob)) / 100n;
     const noAmt = bal - yesAmt;
+    
     const tx = await contract.allocateLiquidity(yesAmt, noAmt);
     await tx.wait();
+    
     broadcast({ type: 'allocated', marketId, yesAmt: yesAmt.toString(), noAmt: noAmt.toString() });
     res.json({ yesAmt: yesAmt.toString(), noAmt: noAmt.toString() });
   } catch (e) {
+    console.error('Allocate endpoint error:', e);
     res.status(500).json({ error: String(e) });
   }
 });
 
 app.post('/simulate-outcome', async (req, res) => {
   try {
-    if (!deployed) deployed = JSON.parse(fs.readFileSync(deployedPath, 'utf8'));
+    if (!deployed) {
+      if (fs.existsSync(deployedPath)) {
+        deployed = JSON.parse(fs.readFileSync(deployedPath, 'utf8'));
+      } else {
+        return res.status(500).json({ error: 'Contracts not deployed. Run deploy_all.js first.' });
+      }
+    }
     const { marketId, winningSide } = req.body;
+    if (!marketId || winningSide === undefined) {
+      return res.status(400).json({ error: 'marketId and winningSide are required' });
+    }
+    
+    if (!wallet) {
+      return res.status(500).json({ error: 'Backend wallet not configured. Set PRIVATE_KEY in .env' });
+    }
+    
+    // Find the market in our map - try both the provided marketId and as bytes32
+    let marketIdBytes32 = marketId;
+    let marketData = markets.get(marketId);
+    
+    // If market not found, try converting to bytes32
+    if (!marketData) {
+      if (typeof marketId === 'string' && marketId.startsWith('0x') && marketId.length === 66) {
+        marketIdBytes32 = marketId;
+      } else {
+        // Try to find it in the map by iterating (marketId might be hex string)
+        for (const [key, value] of markets.entries()) {
+          if (key.toLowerCase() === marketId.toLowerCase()) {
+            marketIdBytes32 = key;
+            marketData = value;
+            break;
+          }
+        }
+      }
+    } else {
+      marketIdBytes32 = marketId;
+    }
+    
+    // Verify the market exists and has a vault
+    if (!marketData || !marketData.vault) {
+      return res.status(404).json({ error: 'Market not found or vault not deployed. MarketId: ' + marketId });
+    }
+    
+    // Verify the vault exists on-chain and check its state
+    const vault = getContract('OracleXVault', marketData.vault);
+    let vaultState;
+    try {
+      vaultState = await vault.state();
+      console.log('Vault state:', vaultState, '(0=Open, 1=Locked, 2=Settled)');
+    } catch (e) {
+      console.error('Vault check failed:', e);
+      return res.status(404).json({ error: 'Vault not found on-chain at address: ' + marketData.vault });
+    }
+    
+    // Check if vault is already settled (state === 2)
+    if (Number(vaultState) === 2) {
+      try {
+        const winningSideStored = await vault.winningSide();
+        return res.status(400).json({ 
+          error: 'Market is already settled', 
+          details: `Market was already settled with winning side: ${winningSideStored === 0 ? 'NO' : 'YES'}`,
+          alreadySettled: true,
+          winningSide: Number(winningSideStored)
+        });
+      } catch (e) {
+        return res.status(400).json({ 
+          error: 'Market is already settled',
+          alreadySettled: true
+        });
+      }
+    }
+    
+    // Ensure marketIdBytes32 is a valid bytes32
+    if (typeof marketIdBytes32 !== 'string' || !marketIdBytes32.startsWith('0x') || marketIdBytes32.length !== 66) {
+      return res.status(400).json({ error: 'Invalid marketId format. Expected 0x-prefixed hex string of 66 characters.' });
+    }
+    
+    const winningSideNum = Number(winningSide);
+    if (winningSideNum !== 0 && winningSideNum !== 1) {
+      return res.status(400).json({ error: 'winningSide must be 0 (NO) or 1 (YES)' });
+    }
+    
+    console.log('Calling postOutcome with marketId:', marketIdBytes32, 'winningSide:', winningSideNum);
     const oracle = getContract('MockChainlinkOracle', deployed.MockChainlinkOracle);
-    const tx = await oracle.postOutcome(marketId, winningSide);
-    await tx.wait();
-    broadcast({ type: 'settled', marketId, winningSide });
-    res.json({ ok: true });
+    
+    try {
+      // Check if we have enough gas
+      const gasEstimate = await oracle.postOutcome.estimateGas(marketIdBytes32, winningSideNum);
+      console.log('Gas estimate:', gasEstimate.toString());
+      
+      const tx = await oracle.postOutcome(marketIdBytes32, winningSideNum);
+      console.log('Transaction sent:', tx.hash);
+      const receipt = await tx.wait();
+      console.log('Transaction confirmed:', receipt.hash);
+      
+      broadcast({ type: 'settled', marketId: marketIdBytes32, winningSide: winningSideNum });
+      res.json({ ok: true, txHash: tx.hash });
+    } catch (txError) {
+      // If the error is about already settled, return a clearer message
+      if (txError.reason && (txError.reason.includes('already') || txError.reason.includes('settled'))) {
+        return res.status(400).json({ 
+          error: 'Market is already settled',
+          alreadySettled: true
+        });
+      }
+      throw txError; // Re-throw other errors
+    }
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    console.error('Simulate outcome endpoint error:', e);
+    const errorMsg = e.reason || e.message || String(e);
+    res.status(500).json({ error: errorMsg, details: e.toString() });
   }
 });
 
@@ -241,7 +440,26 @@ app.get('/get-commitment/:marketId', async (req, res) => {
   }
 });
 
-const server = app.listen(PORT, () => console.log(`Backend on :${PORT}`));
+const server = app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Backend server running on port ${PORT}`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+});
 
-const wss = new WebSocketServer({ port: WSP });
-wss.on('listening', () => console.log(`WS on :${WSP}`));
+// WebSocket server - only start if not in production (Render free tier doesn't support WS well)
+// In production, consider using a separate WebSocket service or polling
+let wss = null;
+if (process.env.NODE_ENV !== 'production' || process.env.ENABLE_WS === 'true') {
+  try {
+    wss = new WebSocketServer({ port: WSP });
+    wss.on('listening', () => console.log(`WebSocket server on port ${WSP}`));
+    wss.on('error', (err) => {
+      console.warn('WebSocket server error:', err.message);
+      console.warn('WebSocket features may be limited. Consider using polling or upgrade plan.');
+    });
+  } catch (err) {
+    console.warn('Could not start WebSocket server:', err.message);
+    console.warn('Real-time updates disabled. Frontend will use polling.');
+  }
+} else {
+  console.log('WebSocket server disabled in production. Use polling for updates.');
+}

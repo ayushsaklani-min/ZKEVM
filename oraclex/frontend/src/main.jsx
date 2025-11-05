@@ -13,7 +13,19 @@ import MarketView from './pages/MarketView'
 const config = getDefaultConfig({
   appName: 'OracleX',
   projectId: 'oraclex-demo',
-  chains: [{ id: 1442, name: 'Polygon zkEVM Testnet (Amoy)', rpcUrls: { default: { http: [import.meta.env.VITE_RPC_URL || 'https://rpc.public.zkevm-test.net'] } } }],
+  chains: [{ 
+    id: 80002, 
+    name: 'Polygon Amoy', 
+    nativeCurrency: { name: 'MATIC', symbol: 'MATIC', decimals: 18 },
+    rpcUrls: { 
+      default: { 
+        http: [import.meta.env.VITE_RPC_URL || 'https://rpc-amoy.polygon.technology'] 
+      } 
+    },
+    blockExplorers: {
+      default: { name: 'PolygonScan', url: 'https://amoy.polygonscan.com' }
+    }
+  }],
   ssr: false,
 })
 

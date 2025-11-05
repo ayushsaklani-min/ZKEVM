@@ -1,8 +1,15 @@
 node_modules/
 .env
+.env.local
+.env.production
 out/
 cache/
 foundry-cache/
 artifacts/
 coverage/
 .DS_Store
+dist/
+*.log
+deployed.json
+frontend/dist/
+frontend/node_modules/
