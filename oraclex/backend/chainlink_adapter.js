@@ -13,11 +13,13 @@ function loadArtifact(name) {
   return JSON.parse(fs.readFileSync(p, 'utf8'));
 }
 
-export async function postOutcome(marketId, winningSide) {
+// Chainlink Functions integration
+// This function should be called by Chainlink Functions DON to settle markets
+export async function settleMarket(marketId, winningSide) {
   const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
   const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
-  const art = loadArtifact('MockChainlinkOracle');
-  const oracle = new ethers.Contract(deployed.MockChainlinkOracle, art.abi, wallet);
-  const tx = await oracle.postOutcome(marketId, winningSide);
+  const art = loadArtifact('OracleXOracleAdapter');
+  const adapter = new ethers.Contract(deployed.OracleXOracleAdapter, art.abi, wallet);
+  const tx = await adapter.pushOutcome(marketId, winningSide);
   return await tx.wait();
 }

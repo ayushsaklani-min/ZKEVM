@@ -50,13 +50,28 @@ function loadArtifact(name) {
 }
 
 const artifacts = {};
-['OracleXMarketFactory', 'OracleXVerifier', 'MockUSDC', 'OracleXVault', 'MockChainlinkOracle'].forEach(n => {
+['OracleXMarketFactory', 'OracleXVerifier', 'OracleXVault'].forEach(n => {
   try { artifacts[n] = loadArtifact(n); } catch (e) { /* ignore until built */ }
 });
+
+// Standard ERC20 ABI for USDC
+const ERC20_ABI = [
+  "function balanceOf(address owner) view returns (uint256)",
+  "function approve(address spender, uint256 amount) returns (bool)",
+  "function transfer(address to, uint256 amount) returns (bool)",
+  "function transferFrom(address from, address to, uint256 amount) returns (bool)",
+  "function decimals() view returns (uint8)",
+  "function symbol() view returns (string)",
+  "function name() view returns (string)"
+];
 
 function getContract(name, address) {
   const a = artifacts[name] || loadArtifact(name);
   return new ethers.Contract(address, a.abi, wallet);
+}
+
+function getUSDCContract(address) {
+  return new ethers.Contract(address, ERC20_ABI, wallet || provider);
 }
 
 const markets = new Map(); // marketId => { eventId, description, closeTimestamp, vault, probability }
@@ -93,8 +108,13 @@ app.get('/addresses', (req, res) => {
 app.get('/abi/:name', (req, res) => {
   try {
     const name = req.params.name;
-    const art = loadArtifact(name);
-    res.json({ abi: art.abi });
+    if (name === 'USDC') {
+      // Return standard ERC20 ABI for USDC
+      res.json({ abi: ERC20_ABI });
+    } else {
+      const art = loadArtifact(name);
+      res.json({ abi: art.abi });
+    }
   } catch (e) {
     res.status(404).json({ error: 'ABI not found' });
   }
@@ -167,23 +187,23 @@ app.post('/ai-run', async (req, res) => {
     const ts = Math.floor(Date.now() / 1000);
     const chainId = await provider.getNetwork().then(n => Number(n.chainId));
     
-    // Try python3 first, fallback to python (Windows)
-    const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
-    const py = spawn(pythonCmd, [path.join(root, 'backend', 'ai_proxy.py')]);
+    // Use Node.js script instead of Python for better Render compatibility
+    const nodeCmd = process.execPath; // Use current Node.js executable
+    const aiScript = spawn(nodeCmd, [path.join(root, 'backend', 'ai_proxy.js')]);
     
     const input = { eventId, description, timestamp: ts, chainId };
-    py.stdin.write(JSON.stringify(input));
-    py.stdin.end();
+    aiScript.stdin.write(JSON.stringify(input));
+    aiScript.stdin.end();
     
     let out = '';
     let errOut = '';
-    py.stdout.on('data', (d) => out += d.toString());
-    py.stderr.on('data', (d) => errOut += d.toString());
+    aiScript.stdout.on('data', (d) => out += d.toString());
+    aiScript.stderr.on('data', (d) => errOut += d.toString());
     
-    py.on('close', async (code) => {
+    aiScript.on('close', async (code) => {
       if (code !== 0) {
-        console.error('Python script error:', errOut);
-        return res.status(500).json({ error: `Python script failed: ${errOut || 'Unknown error'}` });
+        console.error('AI script error:', errOut);
+        return res.status(500).json({ error: `AI script failed: ${errOut || 'Unknown error'}` });
       }
       try {
         const result = JSON.parse(out);
@@ -217,9 +237,9 @@ app.post('/ai-run', async (req, res) => {
       }
     });
     
-    py.on('error', (err) => {
-      console.error('Failed to start Python:', err);
-      res.status(500).json({ error: `Python not found or script error: ${err.message}` });
+    aiScript.on('error', (err) => {
+      console.error('Failed to start AI script:', err);
+      res.status(500).json({ error: `AI script error: ${err.message}` });
     });
   } catch (e) {
     console.error('AI Run endpoint error:', e);
@@ -256,7 +276,7 @@ app.post('/allocate', async (req, res) => {
     }
     
     const contract = getContract('OracleXVault', m.vault);
-    const usdc = getContract('MockUSDC', deployed.MockUSDC);
+    const usdc = getUSDCContract(deployed.USDC);
     const bal = await usdc.balanceOf(m.vault);
     
     if (bal === 0n) {
@@ -278,7 +298,10 @@ app.post('/allocate', async (req, res) => {
   }
 });
 
-app.post('/simulate-outcome', async (req, res) => {
+// Chainlink Functions integration endpoint
+// This endpoint should be called by Chainlink Functions DON when the market closes
+// For now, this is a placeholder that can be integrated with Chainlink Functions
+app.post('/settle-market', async (req, res) => {
   try {
     if (!deployed) {
       if (fs.existsSync(deployedPath)) {
@@ -362,15 +385,13 @@ app.post('/simulate-outcome', async (req, res) => {
       return res.status(400).json({ error: 'winningSide must be 0 (NO) or 1 (YES)' });
     }
     
-    console.log('Calling postOutcome with marketId:', marketIdBytes32, 'winningSide:', winningSideNum);
-    const oracle = getContract('MockChainlinkOracle', deployed.MockChainlinkOracle);
+    // Call OracleAdapter directly to settle the market
+    // In production, this would be called by Chainlink Functions DON
+    console.log('Settling market with marketId:', marketIdBytes32, 'winningSide:', winningSideNum);
+    const adapter = getContract('OracleXOracleAdapter', deployed.OracleXOracleAdapter);
     
     try {
-      // Check if we have enough gas
-      const gasEstimate = await oracle.postOutcome.estimateGas(marketIdBytes32, winningSideNum);
-      console.log('Gas estimate:', gasEstimate.toString());
-      
-      const tx = await oracle.postOutcome(marketIdBytes32, winningSideNum);
+      const tx = await adapter.pushOutcome(marketIdBytes32, winningSideNum);
       console.log('Transaction sent:', tx.hash);
       const receipt = await tx.wait();
       console.log('Transaction confirmed:', receipt.hash);
@@ -388,25 +409,13 @@ app.post('/simulate-outcome', async (req, res) => {
       throw txError; // Re-throw other errors
     }
   } catch (e) {
-    console.error('Simulate outcome endpoint error:', e);
+    console.error('Settle market endpoint error:', e);
     const errorMsg = e.reason || e.message || String(e);
     res.status(500).json({ error: errorMsg, details: e.toString() });
   }
 });
 
-app.post('/faucet', async (req, res) => {
-  try {
-    if (!deployed) deployed = JSON.parse(fs.readFileSync(deployedPath, 'utf8'));
-    const to = req.body.to;
-    const amount = req.body.amount ? BigInt(req.body.amount) : 1000n * 10n ** 6n; // default 1000 mUSDC
-    const usdc = getContract('MockUSDC', deployed.MockUSDC);
-    const tx = await usdc.mint(to, amount);
-    await tx.wait();
-    res.json({ ok: true, to, amount: amount.toString() });
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+// Faucet endpoint removed - users must obtain USDC from testnet faucets or bridges
 
 app.post('/deposit', async (req, res) => {
   try {
@@ -415,7 +424,7 @@ app.post('/deposit', async (req, res) => {
     const m = markets.get(marketId);
     const v = vault || (m && m.vault);
     if (!v) throw new Error('Vault not found');
-    const usdc = getContract('MockUSDC', deployed.MockUSDC);
+    const usdc = getUSDCContract(deployed.USDC);
     const vaultC = getContract('OracleXVault', v);
     const amt = BigInt(amount);
     const t1 = await usdc.approve(v, amt);

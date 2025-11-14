@@ -38,12 +38,17 @@ function loadArtifact(name) {
 }
 
 async function main() {
-  const { RPC_URL, PRIVATE_KEY, DEMO_WALLET } = process.env;
+  const { RPC_URL, PRIVATE_KEY, USDC_ADDRESS } = process.env;
   if (!RPC_URL || !PRIVATE_KEY) throw new Error('RPC_URL and PRIVATE_KEY required');
+  
+  // Real USDC address on Polygon Amoy testnet
+  const usdcAddress = USDC_ADDRESS || '0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582';
+  
   const provider = new ethers.JsonRpcProvider(RPC_URL);
   const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
 
   console.log('Deployer:', await wallet.getAddress());
+  console.log('Using real USDC address:', usdcAddress);
 
   const deploy = async (name, args = []) => {
     const { abi, bytecode } = loadArtifact(name);
@@ -56,32 +61,25 @@ async function main() {
     return new ethers.Contract(addr, abi, wallet);
   };
 
-  const usdc = await deploy('MockUSDC');
   const adapter = await deploy('OracleXOracleAdapter', [ethers.ZeroAddress]);
   const verifier = await deploy('OracleXVerifier');
-  const factory = await deploy('OracleXMarketFactory', [await usdc.getAddress(), await adapter.getAddress(), await verifier.getAddress()]);
+  const factory = await deploy('OracleXMarketFactory', [usdcAddress, await adapter.getAddress(), await verifier.getAddress()]);
   const setTx = await adapter.setFactory(await factory.getAddress());
   await setTx.wait();
   console.log('Adapter wired to factory');
 
-  const mockChainlink = await deploy('MockChainlinkOracle', [await adapter.getAddress()]);
-
-  const demo = DEMO_WALLET || (await wallet.getAddress());
-  const mintTx = await usdc.mint(demo, 1_000_000n * 10n ** 6n);
-  await mintTx.wait();
-  console.log('Minted 1,000,000 mUSDC to', demo);
-
   const deployed = {
     network: await provider.getNetwork().then(n => Number(n.chainId)),
     deployer: await wallet.getAddress(),
-    MockUSDC: await usdc.getAddress(),
+    USDC: usdcAddress,
     OracleXOracleAdapter: await adapter.getAddress(),
     OracleXVerifier: await verifier.getAddress(),
-    OracleXMarketFactory: await factory.getAddress(),
-    MockChainlinkOracle: await mockChainlink.getAddress()
+    OracleXMarketFactory: await factory.getAddress()
   };
   fs.writeFileSync(path.join(root, 'deployed.json'), JSON.stringify(deployed, null, 2));
   console.log('Wrote deployed.json');
+  console.log('\n✅ Deployment complete!');
+  console.log('Note: Users need to obtain USDC from a faucet or bridge to use the platform.');
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });

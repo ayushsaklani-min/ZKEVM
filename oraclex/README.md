@@ -1,64 +1,155 @@
-# OracleX — MVP
+# OracleX — Autonomous AI Liquidity Layer
 
-Autonomous AI Liquidity Layer MVP for prediction markets on Polygon zkEVM testnet.
+Autonomous AI Liquidity Layer MVP for prediction markets on Polygon Amoy testnet.
 
-## 🚀 Quick Deploy
+## 🚀 Features
 
-See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed deployment instructions to Vercel (frontend) and Render (backend).
+- **Smart Contracts**: Factory, Vault, Verifier, and Oracle Adapter deployed on Polygon Amoy
+- **Backend API**: Node.js/Express server with WebSocket support
+- **Frontend**: React + Vite + Wagmi + RainbowKit dashboard
+- **AI Integration**: Deterministic AI probability calculation with on-chain commitments
+- **Real USDC**: Integrated with Polygon Amoy USDC token
 
-## What it does
-- Detects a trending event (simulated)
-- Deploys a market + isolated USDC vault
-- Accepts deposits (YES/NO) and allocates based on AI probability
-- Commits deterministic AI hash (aiHash) on-chain via Verifier
-- Settles via MockChainlink -> OracleAdapter
-- React dashboard shows markets, AI prob, deposit UI, vault stats
+## 📋 Prerequisites
 
-## Quickstart
-Prereqs: Node 18+, npm, Python3, Hardhat (npx OK)
+- Node.js 18+
+- npm 9+
+- Hardhat (via npx)
+- Polygon Amoy testnet access
+
+## 🏃 Quick Start
+
+### 1. Install Dependencies
 
 ```bash
 cd oraclex
-cp .env.example .env
-# Fill PRIVATE_KEY and RPC_URL
 npm install
+cd frontend && npm install && cd ..
+```
+
+### 2. Configure Environment
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` and add:
+- `PRIVATE_KEY` - Your wallet private key
+- `RPC_URL` - Polygon Amoy RPC endpoint
+
+### 3. Deploy Contracts
+
+```bash
 npx hardhat compile
 node scripts/deploy_all.js
-npm run start:backend &
-(cd frontend && npm install && npm run dev) &
-node scripts/demo_flow.js
 ```
 
-Backend: `http://localhost:4000` (WS `ws://localhost:4001`)
-Frontend: `http://localhost:5173`
+This creates `deployed.json` with contract addresses.
 
-## Deposits from UI
-1) Open Dashboard → pick a market → MarketView
-2) Connect wallet (RainbowKit)
-3) Click “Get 1,000 mUSDC Faucet” (from backend) to fund your address
-4) Choose side (YES/NO), enter amount (USDC, 6 decimals handled), click “Deposit”
-5) Run AI → Allocate → Simulate Outcome (for demo)
+### 4. Start Development Servers
 
-## Environment
-```
-PRIVATE_KEY=0x...
-RPC_URL=https://...
-BACKEND_PORT=4000
-WS_PORT=4001
-VITE_BACKEND_URL=http://localhost:4000
-VITE_WS_URL=ws://localhost:4001
-VITE_RPC_URL=https://rpc.public.zkevm-test.net
+**Backend:**
+```bash
+npm run start:backend
 ```
 
-## Replace MockChainlink with Chainlink Functions
-Swap `/simulate-outcome` for a Functions call; DON calls `OracleXOracleAdapter.pushOutcome(marketId, side)`.
+**Frontend (new terminal):**
+```bash
+npm run start:frontend
+```
 
-## Tests
-- Solidity unit test (`test/OracleXVault.t.sol`) showing core flows
-- JS placeholder integration test (`test/full_flow.test.js`)
+- Backend: http://localhost:4000
+- Frontend: http://localhost:5173
 
-## CI
-- GitHub Actions: compile contracts, placeholder JS tests, frontend build
+## 🌐 Deployment
 
-## Notes
-- This MVP is unaudited; do not use in production.
+### Backend (Render)
+
+1. Push code to GitHub
+2. Create Web Service on Render
+3. Connect GitHub repository
+4. Set build command: `npm ci`
+5. Set start command: `npm run start:backend`
+6. Add environment variables:
+   - `PRIVATE_KEY`
+   - `RPC_URL`
+   - `USDC_ADDRESS=0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582`
+   - `NODE_ENV=production`
+
+### Frontend (Vercel)
+
+1. Import GitHub repository
+2. Set root directory: `oraclex` (if needed)
+3. Build command: `cd frontend && npm ci && npm run build`
+4. Output directory: `frontend/dist`
+5. Add environment variables:
+   - `VITE_BACKEND_URL` - Your Render backend URL
+   - `VITE_WS_URL` - WebSocket URL (wss://...)
+   - `VITE_RPC_URL` - Polygon Amoy RPC
+
+## 📁 Project Structure
+
+```
+oraclex/
+├── contracts/          # Smart contracts
+├── backend/            # Node.js API server
+│   ├── server.js       # Express server
+│   └── ai_proxy.js     # AI probability calculator
+├── frontend/           # React frontend
+│   └── src/
+│       ├── pages/      # Dashboard & Market views
+│       └── components/ # UI components
+├── scripts/            # Deployment scripts
+│   └── deploy_all.js   # Contract deployment
+├── artifacts/          # Compiled contract ABIs
+├── deployed.json       # Contract addresses
+├── vercel.json        # Vercel configuration
+└── render.yaml        # Render configuration
+```
+
+## 🔧 Environment Variables
+
+### Backend
+- `PRIVATE_KEY` - Wallet private key (0x...)
+- `RPC_URL` - Polygon Amoy RPC endpoint
+- `USDC_ADDRESS` - USDC token address (default: Polygon Amoy)
+- `BACKEND_PORT` - Server port (default: 4000)
+- `WS_PORT` - WebSocket port (default: 4001)
+- `NODE_ENV` - Environment (development/production)
+
+### Frontend
+- `VITE_BACKEND_URL` - Backend API URL
+- `VITE_WS_URL` - WebSocket URL
+- `VITE_RPC_URL` - Blockchain RPC URL
+
+## 🎯 Usage
+
+1. **Create Market**: Use backend API or frontend UI
+2. **Deploy Market**: Deploy on-chain vault
+3. **Run AI**: Calculate probability and commit hash
+4. **Deposit**: Users deposit USDC into YES/NO pools
+5. **Allocate**: Distribute liquidity based on AI probability
+6. **Settle**: Market settles when close timestamp reached
+
+## 🔗 API Endpoints
+
+- `GET /health` - Health check
+- `GET /addresses` - Contract addresses
+- `GET /markets` - List all markets
+- `POST /create-market` - Create new market
+- `POST /deploy-market` - Deploy market on-chain
+- `POST /ai-run` - Run AI and commit hash
+- `POST /allocate` - Allocate liquidity
+- `POST /settle-market` - Settle market
+- `POST /deposit` - Deposit USDC
+
+## 📝 Notes
+
+- This MVP is unaudited; do not use in production
+- Uses real USDC on Polygon Amoy testnet
+- Market settlement can be manual (testing) or via Chainlink Functions (production)
+- Free tier Render services may spin down after inactivity
+
+## 📄 License
+
+MIT

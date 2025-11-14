@@ -3,7 +3,8 @@ services:
     name: oraclex-backend
     runtime: node
     plan: free
-    buildCommand: npm install
+    nodeVersion: 18
+    buildCommand: npm ci
     startCommand: npm run start:backend
     envVars:
       - key: NODE_ENV
@@ -12,11 +13,13 @@ services:
         sync: false
       - key: RPC_URL
         sync: false
+      - key: USDC_ADDRESS
+        value: 0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582
       - key: BACKEND_PORT
         value: 4000
       - key: WS_PORT
         value: 4001
-    healthCheckPath: /addresses
+    healthCheckPath: /health
     # Note: Render free tier may spin down after inactivity
     # First request after spin-down may take 30-60 seconds
 

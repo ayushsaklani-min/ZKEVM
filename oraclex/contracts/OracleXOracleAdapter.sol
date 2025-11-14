@@ -10,7 +10,7 @@ interface ISettleVault {
 }
 
 /// @title OracleXOracleAdapter
-/// @notice Minimal adapter receiving final outcomes (mocked Chainlink) and settling vaults.
+/// @notice Minimal adapter receiving final outcomes from Chainlink Functions and settling vaults.
 contract OracleXOracleAdapter {
     address public factory;
     address public owner;

@@ -35,7 +35,7 @@ export default function MarketView() {
     const bootstrap = async () => {
       const addrRes = await axios.get(`${backend}/addresses`)
       setAddresses(addrRes.data)
-      const usdc = await axios.get(`${backend}/abi/MockUSDC`).catch(() => ({ data: { abi: [] }}))
+      const usdc = await axios.get(`${backend}/abi/USDC`).catch(() => ({ data: { abi: [] }}))
       const vault = await axios.get(`${backend}/abi/OracleXVault`).catch(() => ({ data: { abi: [] }}))
       setUsdcAbi(usdc.data.abi)
       setVaultAbi(vault.data.abi)
@@ -143,7 +143,9 @@ export default function MarketView() {
     }
   }
 
-  const simulateOutcome = async () => {
+  // Market settlement is handled by Chainlink Functions automatically when market closes
+  // This function is kept for manual testing/emergency settlement if needed
+  const settleMarket = async () => {
     setLoading(true)
     setError(null)
     try {
@@ -156,11 +158,11 @@ export default function MarketView() {
         throw new Error('Market ID not found')
       }
       const winningSide = market?.probability != null && market.probability >= 50 ? 1 : 0
-      const res = await axios.post(`${backend}/simulate-outcome`, { 
+      const res = await axios.post(`${backend}/settle-market`, { 
         marketId: marketIdToUse, 
         winningSide 
       })
-      console.log('Outcome simulated:', res.data)
+      console.log('Market settled:', res.data)
       // Reload market data
       const marketRes = await axios.get(`${backend}/markets`)
       const updatedMarket = marketRes.data.find(x => 
@@ -168,7 +170,7 @@ export default function MarketView() {
       )
       if (updatedMarket) setMarket(updatedMarket)
     } catch (err) {
-      let errorMsg = err.response?.data?.error || err.response?.data?.details || err.message || 'Failed to simulate outcome'
+      let errorMsg = err.response?.data?.error || err.response?.data?.details || err.message || 'Failed to settle market'
       
       // If already settled, show a friendlier message
       if (err.response?.data?.alreadySettled) {
@@ -179,18 +181,8 @@ export default function MarketView() {
       }
       
       setError(errorMsg)
-      console.error('Simulate Outcome Error:', err)
+      console.error('Settle Market Error:', err)
       console.error('Error details:', err.response?.data)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const faucet = async () => {
-    if (!address) return
-    setLoading(true)
-    try {
-      await axios.post(`${backend}/faucet`, { to: address, amount: String(1_000n * 10n ** 6n) })
     } finally {
       setLoading(false)
     }
@@ -203,7 +195,7 @@ export default function MarketView() {
       const amt = parseUnits(amount || '0', 6)
       // approve
       await writeContractAsync({
-        address: addresses?.MockUSDC,
+        address: addresses?.USDC,
         abi: usdcAbi,
         functionName: 'approve',
         args: [market.vault, amt]
@@ -278,12 +270,12 @@ export default function MarketView() {
             Allocate
           </button>
           <button 
-            onClick={simulateOutcome} 
+            onClick={settleMarket} 
             disabled={loading || !market.vault || isSettled} 
             className="px-4 py-2 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-500 hover:to-green-600 rounded-lg font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl"
-            title={isSettled ? `Market already settled. Winning side: ${winningSide?.data === 0 ? 'NO' : 'YES'}` : ''}
+            title={isSettled ? `Market already settled. Winning side: ${winningSide?.data === 0 ? 'NO' : 'YES'}` : 'Manually settle market (normally handled by Chainlink Functions)'}
           >
-            {isSettled ? 'Already Settled' : 'Simulate Outcome'}
+            {isSettled ? 'Already Settled' : 'Settle Market'}
           </button>
         </div>
 
@@ -372,14 +364,20 @@ export default function MarketView() {
 
             {address && (
               <div className="pt-4 border-t border-gray-700/50">
-                <button 
-                  onClick={faucet} 
-                  disabled={loading || !address} 
-                  className="w-full px-4 py-2 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 rounded-lg font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
-                >
-                  🚰 Get 1,000 mUSDC (Faucet)
-                </button>
-                <p className="text-xs text-gray-500 mt-2 text-center">Connected: {address.slice(0, 6)}...{address.slice(-4)}</p>
+                <div className="bg-blue-900/20 border border-blue-500/50 rounded-lg p-3 mb-3">
+                  <p className="text-blue-400 text-sm text-center">
+                    💡 Get USDC from Polygon Amoy faucet or bridge
+                  </p>
+                  <a 
+                    href="https://faucet.polygon.technology/" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="block text-center mt-2 text-blue-300 hover:text-blue-200 underline text-xs"
+                  >
+                    Open Polygon Faucet →
+                  </a>
+                </div>
+                <p className="text-xs text-gray-500 text-center">Connected: {address.slice(0, 6)}...{address.slice(-4)}</p>
               </div>
             )}
           </div>
