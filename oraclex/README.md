@@ -9,6 +9,8 @@ Autonomous AI Liquidity Layer MVP for prediction markets on Polygon Amoy testnet
 - **Frontend**: React + Vite + Wagmi + RainbowKit dashboard
 - **AI Integration**: Deterministic AI probability calculation with on-chain commitments
 - **Real USDC**: Integrated with Polygon Amoy USDC token
+- **Supabase Integration**: Persistent database storage for markets (optional)
+- **Production Ready**: Wallet authentication, gas estimation, content moderation, rate limiting
 
 ## 📋 Prerequisites
 
@@ -116,11 +118,17 @@ oraclex/
 - `BACKEND_PORT` - Server port (default: 4000)
 - `WS_PORT` - WebSocket port (default: 4001)
 - `NODE_ENV` - Environment (development/production)
+- `SUPABASE_URL` - Supabase project URL (optional, for database persistence)
+- `SUPABASE_SERVICE_ROLE_KEY` - Supabase service role key (optional, for backend)
 
 ### Frontend
 - `VITE_BACKEND_URL` - Backend API URL
 - `VITE_WS_URL` - WebSocket URL
 - `VITE_RPC_URL` - Blockchain RPC URL
+- `VITE_SUPABASE_URL` - Supabase project URL (optional)
+- `VITE_SUPABASE_ANON_KEY` - Supabase anon key (optional)
+
+**Note**: Supabase is optional. Without it, markets are stored in memory (lost on restart). See [SUPABASE_SETUP.md](./SUPABASE_SETUP.md) for setup instructions.
 
 ## 🎯 Usage
 
@@ -136,8 +144,9 @@ oraclex/
 - `GET /health` - Health check
 - `GET /addresses` - Contract addresses
 - `GET /markets` - List all markets
-- `POST /create-market` - Create new market
+- `POST /create-market` - Create new market (requires wallet signature)
 - `POST /deploy-market` - Deploy market on-chain
+- `POST /estimate-gas` - Estimate gas cost for market deployment
 - `POST /ai-run` - Run AI and commit hash
 - `POST /allocate` - Allocate liquidity
 - `POST /settle-market` - Settle market
@@ -149,6 +158,9 @@ oraclex/
 - Uses real USDC on Polygon Amoy testnet
 - Market settlement can be manual (testing) or via Chainlink Functions (production)
 - Free tier Render services may spin down after inactivity
+- Supabase integration provides persistent storage (see [SUPABASE_SETUP.md](./SUPABASE_SETUP.md))
+- Market creation requires wallet connection and message signing for authentication
+- Content moderation filters inappropriate language and spam patterns
 
 ## 📄 License
 

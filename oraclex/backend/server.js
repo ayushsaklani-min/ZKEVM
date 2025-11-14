@@ -6,12 +6,24 @@ import { spawn } from 'child_process';
 import { WebSocketServer } from 'ws';
 import { ethers } from 'ethers';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit';
+import Filter from 'bad-words';
+import * as supabaseDb from './supabase.js';
 
 dotenv.config();
 
 const app = express();
-app.use(express.json());
-app.use(cors({ origin: '*'}));
+app.use(express.json({ limit: '100kb' })); // Limit request size
+app.use(cors({ origin: '*' }));
+
+// Rate limiting for market creation (5 requests per 15 minutes per IP)
+const createMarketLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // 5 requests per window
+  message: 'Too many market creation requests, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 // Render sets PORT automatically, fallback to BACKEND_PORT or 4000
 const PORT = process.env.PORT || process.env.BACKEND_PORT || 4000;
@@ -74,6 +86,11 @@ function getUSDCContract(address) {
   return new ethers.Contract(address, ERC20_ABI, wallet || provider);
 }
 
+// Content moderation filter
+const profanityFilter = new Filter();
+profanityFilter.addWords('spam', 'scam'); // Add custom words if needed
+
+// Legacy in-memory fallback (only used if Supabase not configured)
 const markets = new Map(); // marketId => { eventId, description, closeTimestamp, vault, probability }
 
 function broadcast(msg) {
@@ -120,31 +137,281 @@ app.get('/abi/:name', (req, res) => {
   }
 });
 
-app.get('/markets', (req, res) => {
-  const all = Array.from(markets.entries()).map(([marketId, m]) => ({ marketId, ...m }));
-  res.json(all);
+app.get('/markets', async (req, res) => {
+  try {
+    if (supabaseDb.supabase) {
+      // Use Supabase
+      const dbMarkets = await supabaseDb.getAllMarkets();
+      const formatted = dbMarkets.map(m => ({
+        marketId: m.market_id,
+        eventId: m.event_id,
+        description: m.description,
+        closeTimestamp: m.close_timestamp,
+        vault: m.vault_address,
+        probability: m.probability,
+        creatorAddress: m.creator_address,
+        createdAt: m.created_at,
+        deployedAt: m.deployed_at,
+      }));
+      return res.json(formatted);
+    } else {
+      // Fallback to in-memory
+      const all = Array.from(markets.entries()).map(([marketId, m]) => ({ marketId, ...m }));
+      res.json(all);
+    }
+  } catch (error) {
+    console.error('Error fetching markets:', error);
+    // Fallback to in-memory on error
+    const all = Array.from(markets.entries()).map(([marketId, m]) => ({ marketId, ...m }));
+    res.json(all);
+  }
 });
 
-app.post('/create-market', async (req, res) => {
-  const { eventId, description, closeTimestamp } = req.body;
-  const network = await provider.getNetwork();
-  const account = wallet ? await wallet.getAddress() : ethers.ZeroAddress;
-  const marketId = ethers.solidityPackedKeccak256(
-    ['string','string','uint256','address','uint256'],
-    [eventId, description, BigInt(closeTimestamp), account, BigInt(network.chainId)]
-  );
-  markets.set(marketId, { eventId, description, closeTimestamp, vault: null, probability: null });
-  broadcast({ type: 'market_created', marketId, eventId, description, closeTimestamp });
-  res.json({ marketId });
+// Input validation helper
+function validateMarketInput(eventId, description, closeTimestamp) {
+  const errors = [];
+  
+  // Event ID validation
+  if (!eventId || typeof eventId !== 'string') {
+    errors.push('Event ID is required and must be a string');
+  } else {
+    const trimmed = eventId.trim();
+    if (trimmed.length === 0) {
+      errors.push('Event ID cannot be empty');
+    } else if (trimmed.length > 100) {
+      errors.push('Event ID must be 100 characters or less');
+    } else if (!/^[a-zA-Z0-9\-_ ]+$/.test(trimmed)) {
+      errors.push('Event ID can only contain letters, numbers, spaces, hyphens, and underscores');
+    }
+  }
+  
+  // Description validation
+  if (!description || typeof description !== 'string') {
+    errors.push('Description is required and must be a string');
+  } else {
+    const trimmed = description.trim();
+    if (trimmed.length === 0) {
+      errors.push('Description cannot be empty');
+    } else if (trimmed.length > 500) {
+      errors.push('Description must be 500 characters or less');
+    }
+  }
+  
+  // Close timestamp validation
+  if (!closeTimestamp || typeof closeTimestamp !== 'number') {
+    errors.push('Close timestamp is required and must be a number');
+  } else {
+    const now = Math.floor(Date.now() / 1000);
+    const maxFuture = now + (365 * 24 * 60 * 60); // 1 year from now
+    
+    if (closeTimestamp < now) {
+      errors.push('Close timestamp cannot be in the past');
+    } else if (closeTimestamp > maxFuture) {
+      errors.push('Close timestamp cannot be more than 1 year in the future');
+    }
+  }
+  
+  return errors;
+}
+
+// Sanitize string inputs (remove potential XSS)
+function sanitizeString(str) {
+  if (typeof str !== 'string') return '';
+  return str.trim()
+    .replace(/[<>]/g, '') // Remove angle brackets
+    .substring(0, 500); // Enforce max length
+}
+
+// Content moderation check
+function checkContentModeration(text) {
+  if (!text || typeof text !== 'string') return { allowed: true };
+  
+  const isProfane = profanityFilter.isProfane(text);
+  if (isProfane) {
+    return { 
+      allowed: false, 
+      reason: 'Content contains inappropriate language. Please use professional language.' 
+    };
+  }
+  
+  // Check for spam patterns
+  const spamPatterns = [
+    /(.)\1{10,}/, // Repeated characters (e.g., "aaaaaaaaaaa")
+    /(.){1,3}\s*(.){1,3}\s*(.){1,3}\s*(.){1,3}\s*(.){1,3}/, // Random character spam
+  ];
+  
+  for (const pattern of spamPatterns) {
+    if (pattern.test(text)) {
+      return { 
+        allowed: false, 
+        reason: 'Content appears to be spam. Please provide a meaningful description.' 
+      };
+    }
+  }
+  
+  return { allowed: true };
+}
+
+// Verify wallet signature
+async function verifyWalletSignature(address, message, signature) {
+  try {
+    const recoveredAddress = ethers.verifyMessage(message, signature);
+    return recoveredAddress.toLowerCase() === address.toLowerCase();
+  } catch (error) {
+    console.error('Signature verification error:', error);
+    return false;
+  }
+}
+
+app.post('/create-market', createMarketLimiter, async (req, res) => {
+  try {
+    let { eventId, description, closeTimestamp, creatorAddress, signature, message } = req.body;
+    
+    // Verify wallet signature if provided
+    if (creatorAddress && signature && message) {
+      const isValid = await verifyWalletSignature(creatorAddress, message, signature);
+      if (!isValid) {
+        return res.status(401).json({ error: 'Invalid wallet signature' });
+      }
+    } else {
+      // Fallback: use deployer wallet address if no signature provided
+      creatorAddress = wallet ? await wallet.getAddress() : ethers.ZeroAddress;
+    }
+    
+    // Sanitize inputs
+    eventId = sanitizeString(eventId);
+    description = sanitizeString(description);
+    
+    // Content moderation
+    const eventIdCheck = checkContentModeration(eventId);
+    if (!eventIdCheck.allowed) {
+      return res.status(400).json({ error: eventIdCheck.reason });
+    }
+    
+    const descriptionCheck = checkContentModeration(description);
+    if (!descriptionCheck.allowed) {
+      return res.status(400).json({ error: descriptionCheck.reason });
+    }
+    
+    // Validate inputs
+    const validationErrors = validateMarketInput(eventId, description, closeTimestamp);
+    if (validationErrors.length > 0) {
+      return res.status(400).json({ error: validationErrors.join('; ') });
+    }
+    
+    const network = await provider.getNetwork();
+    const chainId = Number(network.chainId);
+    
+    // Generate market ID
+    const marketId = ethers.solidityPackedKeccak256(
+      ['string','string','uint256','address','uint256'],
+      [eventId, description, BigInt(closeTimestamp), creatorAddress, BigInt(chainId)]
+    );
+    
+    // Check for duplicate market
+    if (supabaseDb.supabase) {
+      const exists = await supabaseDb.checkMarketExists(marketId);
+      if (exists) {
+        return res.status(409).json({ error: 'Market with these parameters already exists' });
+      }
+    } else {
+      if (markets.has(marketId)) {
+        return res.status(409).json({ error: 'Market with these parameters already exists' });
+      }
+    }
+    
+    // Store market
+    if (supabaseDb.supabase) {
+      await supabaseDb.createMarket({
+        marketId,
+        eventId,
+        description,
+        closeTimestamp,
+        creatorAddress,
+        chainId,
+        vault: null,
+        probability: null,
+      });
+    } else {
+      markets.set(marketId, { eventId, description, closeTimestamp, vault: null, probability: null });
+    }
+    
+    broadcast({ type: 'market_created', marketId, eventId, description, closeTimestamp });
+    res.json({ marketId });
+  } catch (error) {
+    console.error('Error creating market:', error);
+    res.status(500).json({ error: 'Internal server error while creating market' });
+  }
 });
 
-app.post('/deploy-market', async (req, res) => {
+// Gas estimation endpoint
+app.post('/estimate-gas', async (req, res) => {
+  try {
+    if (!deployed) deployed = JSON.parse(fs.readFileSync(deployedPath, 'utf8'));
+    const { eventId, description, closeTimestamp } = req.body;
+    
+    if (!eventId || !description || !closeTimestamp) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+    
+    const factory = getContract('OracleXMarketFactory', deployed.OracleXMarketFactory);
+    const gasEstimate = await factory.createMarket.estimateGas(eventId, description, closeTimestamp);
+    const gasPrice = await provider.getFeeData();
+    
+    const estimatedCost = gasEstimate * (gasPrice.gasPrice || gasPrice.maxFeePerGas || 0n);
+    const estimatedCostEth = ethers.formatEther(estimatedCost);
+    
+    res.json({
+      gasEstimate: gasEstimate.toString(),
+      gasPrice: gasPrice.gasPrice?.toString() || gasPrice.maxFeePerGas?.toString() || '0',
+      estimatedCost: estimatedCost.toString(),
+      estimatedCostEth,
+    });
+  } catch (error) {
+    console.error('Error estimating gas:', error);
+    res.status(500).json({ error: 'Failed to estimate gas: ' + error.message });
+  }
+});
+
+app.post('/deploy-market', createMarketLimiter, async (req, res) => {
   try {
     if (!deployed) deployed = JSON.parse(fs.readFileSync(deployedPath, 'utf8'));
     const { marketId, eventId, description, closeTimestamp } = req.body;
+    
+    // Validate inputs
+    const validationErrors = validateMarketInput(eventId, description, closeTimestamp);
+    if (validationErrors.length > 0) {
+      return res.status(400).json({ error: validationErrors.join('; ') });
+    }
+    
+    // Verify market exists
+    let marketExists = false;
+    if (supabaseDb.supabase) {
+      const market = await supabaseDb.getMarketByMarketId(marketId);
+      marketExists = !!market;
+    } else {
+      marketExists = markets.has(marketId);
+    }
+    
+    if (!marketExists) {
+      return res.status(404).json({ error: 'Market not found. Please create the market first.' });
+    }
+    
     const factory = getContract('OracleXMarketFactory', deployed.OracleXMarketFactory);
+    
+    // Check if wallet has funds for gas
+    if (wallet) {
+      const balance = await provider.getBalance(await wallet.getAddress());
+      if (balance === 0n) {
+        return res.status(402).json({ error: 'Insufficient funds for gas. Please fund the deployer wallet.' });
+      }
+    } else {
+      return res.status(500).json({ error: 'No deployer wallet configured' });
+    }
+    
     const tx = await factory.createMarket(eventId, description, closeTimestamp);
     const rc = await tx.wait();
+    
     let vaultAddr = null;
     let onChainId = null;
     for (const l of rc.logs) {
@@ -158,14 +425,52 @@ app.post('/deploy-market', async (req, res) => {
         }
       } catch (_) {}
     }
-    if (!vaultAddr || !onChainId) throw new Error('Vault/Id not found in logs');
-    const m = markets.get(marketId) || { eventId, description, closeTimestamp };
-    m.vault = vaultAddr;
-    markets.delete(marketId);
-    markets.set(onChainId, m);
+    
+    if (!vaultAddr || !onChainId) {
+      // Transaction succeeded but we couldn't parse logs - this is a critical error
+      const errorMsg = 'Deployment succeeded but vault address not found in logs';
+      if (supabaseDb.supabase) {
+        await supabaseDb.updateMarket(marketId, { deploy_error: errorMsg });
+      } else {
+        const m = markets.get(marketId);
+        if (m) {
+          m.deployError = errorMsg;
+        }
+      }
+      throw new Error(errorMsg);
+    }
+    
+    // Successfully deployed - update market record
+    if (supabaseDb.supabase) {
+      await supabaseDb.updateMarket(marketId, {
+        vault_address: vaultAddr,
+        market_id: onChainId, // Update to on-chain ID
+        deployed_at: new Date().toISOString(),
+        deploy_error: null,
+      });
+    } else {
+      const m = markets.get(marketId) || { eventId, description, closeTimestamp };
+      m.vault = vaultAddr;
+      markets.delete(marketId);
+      markets.set(onChainId, m);
+    }
+    
     broadcast({ type: 'market_deployed', marketId: onChainId, vault: vaultAddr });
     res.json({ marketId: onChainId, vault: vaultAddr });
   } catch (e) {
+    console.error('Error deploying market:', e);
+    // If deployment fails, mark it in database
+    const { marketId } = req.body;
+    if (marketId) {
+      if (supabaseDb.supabase) {
+        await supabaseDb.updateMarket(marketId, { deploy_error: String(e) });
+      } else {
+        if (markets.has(marketId)) {
+          const m = markets.get(marketId);
+          m.deployError = String(e);
+        }
+      }
+    }
     res.status(500).json({ error: String(e) });
   }
 });
