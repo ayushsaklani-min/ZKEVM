@@ -81,25 +81,6 @@ export async function updateMarket(marketId, updates) {
     throw new Error('Supabase not configured');
   }
   
-  const { data, error } = await supabase
-    .from('markets')
-    .update({
-      ...updates,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('market_id', marketId)
-    .select()
-    .single();
-  
-  if (error) throw error;
-  return data;
-}
-
-export async function updateMarket(marketId, updates) {
-  if (!supabase) {
-    throw new Error('Supabase not configured');
-  }
-  
   const updateData = { ...updates };
   if (updates.deployed_at) {
     updateData.deployed_at = updates.deployed_at;
