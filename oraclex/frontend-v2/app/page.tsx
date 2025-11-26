@@ -8,6 +8,7 @@ import { useMarkets, useTrendingMarkets } from '@/hooks/useMarkets';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TrendingUp, Clock, CheckCircle2 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Market } from '@/types';
 
 export default function HomePage() {
   const { data: markets, isLoading } = useMarkets();
@@ -16,7 +17,7 @@ export default function HomePage() {
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
 
-  const filteredMarkets = markets?.filter((market) => {
+  const filteredMarkets: Market[] = (markets || []).filter((market: Market) => {
     // Search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
