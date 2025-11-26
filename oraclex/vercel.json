@@ -3,7 +3,6 @@
   "outputDirectory": "frontend-v2/.next",
   "installCommand": "cd frontend-v2 && npm ci",
   "framework": "nextjs",
-  "rootDirectory": "oraclex",
   "headers": [
     {
       "source": "/(.*)",
