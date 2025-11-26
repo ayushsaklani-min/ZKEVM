@@ -11,13 +11,15 @@ import { AIInsights } from '@/components/markets/AIInsights';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AlertCircle } from 'lucide-react';
+import { use } from 'react';
 
 export default function MarketPage({
   params,
 }: {
-  params: { marketId: string };
+  params: Promise<{ marketId: string }>;
 }) {
-  const { data: market, isLoading, error } = useMarket(params.marketId);
+  const { marketId } = use(params);
+  const { data: market, isLoading, error } = useMarket(marketId);
 
   if (isLoading) {
     return (
@@ -56,7 +58,7 @@ export default function MarketPage({
         {/* Left Column: Market Info + Chart */}
         <div className="lg:col-span-2 space-y-6">
           <MarketHeader market={market} />
-          <PriceChart marketId={params.marketId} />
+          <PriceChart marketId={marketId} />
           
           {market.aiExplanation && (
             <AIInsights market={market} />
@@ -83,15 +85,15 @@ export default function MarketPage({
 
         {/* Right Column: Trading Interface */}
         <div className="space-y-6">
-          <TradingInterface marketId={params.marketId} market={market} />
-          <YourPositions marketId={params.marketId} />
+          <TradingInterface marketId={marketId} market={market} />
+          <YourPositions marketId={marketId} />
           <MarketStats market={market} />
         </div>
       </div>
 
       {/* Bottom: Recent Activity */}
       <div className="mt-8">
-        <RecentTrades marketId={params.marketId} />
+        <RecentTrades marketId={marketId} />
       </div>
     </div>
   );

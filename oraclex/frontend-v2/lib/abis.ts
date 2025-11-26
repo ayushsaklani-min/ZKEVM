@@ -218,3 +218,63 @@ export const FEE_DISTRIBUTOR_ABI = [
     type: 'function',
   },
 ] as const;
+
+export const ORACLE_ADAPTER_ABI = [
+  {
+    inputs: [
+      { name: 'marketId', type: 'bytes32' },
+      { name: 'result', type: 'uint8' },
+      { name: 'proof', type: 'bytes' },
+    ],
+    name: 'proposeOutcome',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'marketId', type: 'bytes32' }],
+    name: 'finalizeOutcome',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'marketId', type: 'bytes32' }],
+    name: 'getOutcome',
+    outputs: [
+      { name: 'result', type: 'uint8' },
+      { name: 'proposedAt', type: 'uint256' },
+      { name: 'finalized', type: 'bool' },
+    ],
+    stateMutability: 'view',
+    type: 'function',
+  },
+] as const;
+
+export const TREASURY_ABI = [
+  {
+    inputs: [{ name: 'token', type: 'address' }],
+    name: 'distributeFees',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'token', type: 'address' }],
+    name: 'getBalance',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [
+      { name: 'token', type: 'address' },
+      { name: 'to', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+    ],
+    name: 'withdraw',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+] as const;
