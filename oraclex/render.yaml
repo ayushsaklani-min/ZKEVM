@@ -20,6 +20,12 @@ services:
         value: 4000
       - key: WS_PORT
         value: 4001
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
     healthCheckPath: /health
     # Note: Render free tier may spin down after inactivity
     # First request after spin-down may take 30-60 seconds

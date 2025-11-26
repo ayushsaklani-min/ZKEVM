@@ -9,12 +9,11 @@
   },
   "scripts": {
     "start:backend": "node backend/server.js",
-    "start:frontend": "cd frontend && npm install && npm run dev",
-    "deploy:contracts": "node scripts/deploy_all.js",
-    "demo": "node scripts/demo_flow.js",
+    "start:frontend": "cd frontend-v2 && npm run dev",
+    "build:frontend": "cd frontend-v2 && npm ci && npm run build",
     "compile": "npx hardhat compile",
-    "test:hh": "npx hardhat test",
-    "build": "cd frontend && npm install && npm run build"
+    "compile:v2": "npx hardhat compile --config hardhat-v2.config.js",
+    "test:hh": "npx hardhat test"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.3",

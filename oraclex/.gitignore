@@ -1,17 +1,19 @@
 # Dependencies
 node_modules/
-frontend/node_modules/
+frontend-v2/node_modules/
 
 # Environment variables
 .env
 .env.local
 .env.production
-QUICK_SETUP.md
+.env*.local
 
 # Build outputs
 dist/
 build/
 out/
+frontend-v2/.next/
+frontend-v2/out/
 *.log
 
 # IDE
@@ -28,18 +30,17 @@ Thumbs.db
 # Hardhat
 cache/
 hh-cache/
-# Note: artifacts/ folder MUST be committed (needed for backend deployment)
+cache-v2/
+# Note: artifacts/ and artifacts-v2/ folders MUST be committed (needed for backend deployment)
 
 # Testing
 coverage/
 .nyc_output/
 
 # Deployment
-# deployed.json - KEEP THIS COMMITTED (contains only public contract addresses)
-# Uncomment the line below if you want to exclude it:
-# deployed.json
+# deployed.json and deployed-v2.json - KEEP THESE COMMITTED (contains only public contract addresses)
 
-# Python (if still using)
+# Python
 __pycache__/
 *.pyc
 *.pyo

@@ -8,9 +8,10 @@ import { ethers } from 'ethers';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import Filter from 'bad-words';
-import * as supabaseDb from './supabase.js';
 
+// Load environment variables BEFORE importing supabase
 dotenv.config();
+import * as supabaseDb from './supabase.js';
 
 const app = express();
 app.use(express.json({ limit: '100kb' })); // Limit request size
