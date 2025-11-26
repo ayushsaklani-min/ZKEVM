@@ -53,6 +53,58 @@ export const PREDICTION_AMM_ABI = [
     stateMutability: 'view',
     type: 'function',
   },
+  {
+    inputs: [
+      { name: 'role', type: 'bytes32' },
+      { name: 'account', type: 'address' },
+    ],
+    name: 'hasRole',
+    outputs: [{ name: '', type: 'bool' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [],
+    name: 'pause',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [],
+    name: 'unpause',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'newFee', type: 'uint256' }],
+    name: 'setTradingFee',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [
+      { name: 'marketId', type: 'bytes32' },
+      { name: 'winningSide', type: 'uint8' },
+    ],
+    name: 'settleMarket',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [
+      { name: 'marketId', type: 'bytes32' },
+      { name: 'side', type: 'uint8' },
+      { name: 'shares', type: 'uint256' },
+    ],
+    name: 'redeem',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
 ] as const;
 
 export const MARKET_FACTORY_ABI = [
@@ -85,6 +137,20 @@ export const MARKET_FACTORY_ABI = [
       { name: 'active', type: 'bool' },
     ],
     stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'newFee', type: 'uint256' }],
+    name: 'setMarketCreationFee',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'newMin', type: 'uint256' }],
+    name: 'setMinInitialLiquidity',
+    outputs: [],
+    stateMutability: 'nonpayable',
     type: 'function',
   },
 ] as const;
@@ -134,6 +200,26 @@ export const ORX_TOKEN_ABI = [
     stateMutability: 'view',
     type: 'function',
   },
+  {
+    inputs: [
+      { name: 'spender', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+    ],
+    name: 'approve',
+    outputs: [{ name: '', type: 'bool' }],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [
+      { name: 'to', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+    ],
+    name: 'mint',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
 ] as const;
 
 export const VEORX_ABI = [
@@ -162,6 +248,27 @@ export const VEORX_ABI = [
       { name: 'end', type: 'uint256' },
     ],
     stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'additionalAmount', type: 'uint256' }],
+    name: 'increaseLockAmount',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'newDuration', type: 'uint256' }],
+    name: 'increaseLockDuration',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [],
+    name: 'withdraw',
+    outputs: [],
+    stateMutability: 'nonpayable',
     type: 'function',
   },
 ] as const;
@@ -213,6 +320,13 @@ export const FEE_DISTRIBUTOR_ABI = [
       { name: 'epochId', type: 'uint256' },
     ],
     name: 'getClaimableRewards',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'user', type: 'address' }],
+    name: 'getTotalClaimableRewards',
     outputs: [{ name: '', type: 'uint256' }],
     stateMutability: 'view',
     type: 'function',
