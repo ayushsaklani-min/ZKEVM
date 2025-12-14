@@ -58,8 +58,8 @@ export default function MarketDetailPage() {
   
   const yesPrice = Number(market.yesPrice) || 0.5;
   const noPrice = Number(market.noPrice) || 0.5;
-  const totalLiquidity = Number(market.totalLiquidity) / 1e6;
-  const volume = Number(market.totalVolume) / 1e6;
+  const totalLiquidity = Number(market.totalLiquidity) / 1e18; // Shares with 18 decimals
+  const volume = Number(market.totalVolume) / 1e6; // USDC with 6 decimals
   const closeDate = new Date(Number(market.closeTimestamp) * 1000);
   const isClosingSoon = closeDate.getTime() - Date.now() < 24 * 60 * 60 * 1000;
 

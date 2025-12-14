@@ -98,10 +98,10 @@ export default function AnalyticsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              ${(analytics.totalLiquidity / 1e6).toFixed(2)}
+              ${(analytics.totalLiquidity / 1e18).toFixed(2)}
             </div>
             <p className="text-xs text-muted-foreground">
-              USDC locked
+              Total shares
             </p>
           </CardContent>
         </Card>
