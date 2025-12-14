@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { useParams } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
 import { useAccount } from 'wagmi';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -10,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { querySubgraph, queries } from '@/lib/api';
+import { useMarketDetail } from '@/hooks/useMarketDetail';
 import { useBuyShares, useSellShares, useRedeemWinnings } from '@/hooks/useTrading';
 import { TrendingUp, TrendingDown, Clock, Users, DollarSign, Activity } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -27,13 +26,7 @@ export default function MarketDetailPage() {
   const { sell } = useSellShares();
   const { redeem } = useRedeemWinnings();
 
-  const { data: marketData, isLoading } = useQuery({
-    queryKey: ['market-detail', marketId],
-    queryFn: () => querySubgraph<any>(queries.GET_MARKET, { id: marketId }),
-    refetchInterval: 5000,
-  });
-
-  const market = marketData?.market;
+  const { data: market, isLoading } = useMarketDetail(marketId);
 
   if (isLoading) {
     return (
@@ -60,6 +53,9 @@ export default function MarketDetailPage() {
     );
   }
 
+  const categoryNames = ['Sports', 'Politics', 'Crypto', 'Entertainment', 'Science', 'Other'];
+  const categoryName = categoryNames[market.category] || 'Other';
+  
   const yesPrice = Number(market.yesPrice) || 0.5;
   const noPrice = Number(market.noPrice) || 0.5;
   const totalLiquidity = Number(market.totalLiquidity) / 1e6;
@@ -102,7 +98,7 @@ export default function MarketDetailPage() {
           <div className="flex-1">
             <h1 className="mb-2 text-3xl font-bold">{market.description}</h1>
             <div className="flex flex-wrap gap-2">
-              <Badge variant="outline">{market.category}</Badge>
+              <Badge variant="outline">{categoryName}</Badge>
               {market.settled && (
                 <Badge variant="default">Settled</Badge>
               )}
